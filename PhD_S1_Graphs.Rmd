@@ -1,0 +1,196 @@
+---
+title: "Study 1 Graphs"
+author: "Róisín Leahy"
+date: "5/13/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("C:/Users/roisi/OneDrive/Documents/PhD/PhD_Data/PhD_Data_S2")
+
+lib<-c("readr","tidyverse","RColorBrewer", "patchwork")
+lapply(lib, require, character.only=TRUE)
+
+survey_dat<-read_csv("PhD_Data_S2.csv")
+survey_dat<-survey_dat %>% dplyr::select(-Timestamp)
+survey_dat<-survey_dat %>% filter(LGF_2019=="Yes" & Dem_Age>=18)
+survey_dat<-unique(survey_dat)
+
+survey<-survey_dat %>%
+  select(Dem_County,
+         Num_Tot_Con_LGF,ConLGF_2019,
+         CP_Screen_1_A1:CP_Screen_29_A5)
+
+####Prevalence####
+table(survey$Num_Tot_Con_LGF)
+table(survey$ConLGF_2019)
+
+survey<-survey %>%
+  mutate(across(Dem_County,~dplyr::recode(.,"Yes"="Elite","No"="Non-Elite"))) %>%
+  mutate(across(Num_Tot_Con_LGF,~fct_collapse(.,"3+"=c("3","4","5","6","7","9","10 or more"))))
+
+##Prevalence of SRC- percentage
+src_perc<-survey %>%
+  group_by(Dem_County) %>%
+  dplyr::count(Num_Tot_Con_LGF) %>%
+  mutate(Perc_Tot=(n*100)/nrow(survey))
+
+src_perc<-survey %>%
+  group_by(Dem_County) %>%
+  dplyr::count(Num_Tot_Con_LGF) %>%
+  mutate(Perc_Tot=if_else(
+    Dem_County=="Elite",(n*100)/134,(n*100)/523))
+
+src_p1<-survey %>% 
+  mutate(Num_Tot_Con_LGF=fct_relevel(Num_Tot_Con_LGF,"None","1","2","3+")) %>%
+  ggplot(aes(x=Num_Tot_Con_LGF,fill=Dem_County)) +
+  geom_bar() +
+  labs(x="N of concussions",y="N of players",fill="Level of Play") +
+  facet_wrap(vars(Dem_County)) +
+  theme_classic() +
+  scale_fill_brewer(palette="Dark2")
+src_p1
+
+src_p2<-src_perc %>%
+  mutate(Num_Tot_Con_LGF=fct_relevel(Num_Tot_Con_LGF,"None","1","2","3+")) %>%
+  ggplot(aes(x=Num_Tot_Con_LGF,y=Perc_Tot,fill=Dem_County)) +
+  geom_bar(stat="identity") +
+  facet_wrap(vars(Dem_County)) +
+  geom_text(aes(label=sprintf("%0.1f",round(Perc_Tot,digits=1))),nudge_y=1.2) +
+  labs(x="Number of previous concussions",y="% of players",fill="Level of Play") +
+  theme_classic() +
+  theme(strip.background=element_rect(colour=NULL)) +
+  scale_fill_brewer(palette="Dark2")
+src_p2
+ggsave("SRC_his.png",width=7.5,height=5)
+
+####Clinical Profiles####
+survey_src<-survey %>%
+  filter(ConLGF_2019=="Yes") %>%
+  mutate(across(CP_Screen_1_A1:CP_Screen_29_A5,~dplyr::recode(.,
+    "None"=0, "Mild"=1, "Moderate"=2, "Severe"=3)))
+
+survey_src<-survey_src %>%
+  rowwise() %>%
+  mutate(CP_Anx_tot=sum(CP_Screen_1_A1,CP_Screen_5_A2,CP_Screen_10_A3,CP_Screen_26_A4,CP_Screen_29_A5),
+         CP_Cog_tot=sum(CP_Screen_13_C1,CP_Screen_24_C2,CP_Screen_28_C3),
+         CP_Mig_tot=sum(CP_Screen_2_M1,CP_Screen_6_M2,CP_Screen_11_M3,CP_Screen_20_M4,CP_Screen_27_M5),
+         CP_Vest_tot=sum(CP_Screen_4_V1,CP_Screen_9_V2,CP_Screen_12_V3,CP_Screen_15_V4,CP_Screen_21_V5),
+         CP_Ocu_tot=sum(CP_Screen_3_O1,CP_Screen_7_O2,CP_Screen_8_O3,CP_Screen_14_O4,CP_Screen_19_O5),
+         CP_Sleep_tot=sum(CP_Screen_17_S1,CP_Screen_18_S2,CP_Screen_22_S3,CP_Screen_23_S4),
+         CP_Neck_tot=sum(CP_Screen_16_N1,CP_Screen_25_N2)) %>%
+  mutate(Mood=CP_Anx_tot/5,
+         Cognitive=CP_Cog_tot/3,
+         Migraine=CP_Mig_tot/5,
+         Vestibular=CP_Vest_tot/5,
+         Ocular=CP_Ocu_tot/5,
+         Sleep=CP_Sleep_tot/4,
+         Neck=CP_Neck_tot/2)
+
+survey_src<-survey_src %>%
+  select(Dem_County,Mood,Cognitive,Migraine,Vestibular,Ocular,Sleep,Neck) %>%
+  pivot_longer(cols=Mood:Neck,names_to="Profile")
+
+CP_p1<-survey_src %>%
+  mutate(Profile=fct_relevel(Profile,"Sleep","Mood","Neck","Vestibular","Cognitive","Migraine","Ocular",)) %>% 
+  ggplot(aes(x=Profile,y=value,colour=Profile)) + 
+  geom_boxplot() + geom_jitter(alpha=0.2) +
+  stat_summary(aes(label=round(..y..,2)),fun="mean",geom="text",colour="black") +
+  labs(x="Clinical Profile",y="Mean Score") +
+  coord_flip() +
+  theme_classic() +
+  theme(axis.text.y=element_text(angle=45)) +
+  theme(legend.position="none") +
+  scale_colour_brewer(palette="Dark2")
+CP_p1
+ggsave("CPs.png")
+
+CP_p2<-survey_src %>%
+  mutate(Profile=fct_relevel(Profile,"Sleep","Mood","Neck","Vestibular","Cognitive","Migraine","Ocular",)) %>% 
+  ggplot(aes(x=Profile,y=value,fill=Profile)) + 
+  geom_boxplot() + geom_jitter(alpha=0.2) +
+  theme_classic() +
+  scale_fill_brewer(palette="Dark2")
+  CP_p2
+  
+####Management####
+survey_src2<-survey_dat %>%
+    filter(ConLGF_2019=="Yes") %>%
+    select(Dem_County,ConHx_Dx_2019,ConHx_ImmRes_2019,ConHx_ToldCoach_2019,ConHx_SameDayRTP_2019:ConHx_RTS_2019) %>%
+    mutate(across(everything(),factor)) 
+  
+survey_src2_df<-survey_src2 %>%
+  filter(ConHx_Dx_2019=="Yes"|ConHx_Dx_2019=="No") %>%
+  pivot_longer(cols=ConHx_ToldCoach_2019:ConHx_RTS_2019,names_to="Management",values_to="Response") %>%
+  group_by(ConHx_Dx_2019) %>%
+  dplyr::count(Response,Management) %>%
+  mutate(Perc=if_else(ConHx_Dx_2019=="Yes",n*100/63,n*100/51))
+survey_src2_df
+
+survey_src2_df$Management<-factor(survey_src2_df$Management,
+                                  levels=c("ConHx_ToldCoach_2019","ConHx_SameDayRTP_2019","ConHx_SympRTP_2019","ConHx_RTPProg_2019","ConHx_RTPMedSup_2019","ConHx_MedClear_2019","ConHx_RTS_2019"),
+                                  labels=c("Told coach","Same day RTP","RTP with symptoms","Followed GRTP programme","Medically supervised GRTP","Medical clearance before RTP","Followed RTS programme"))
+survey_src2_df$ConHx_Dx_2019<-factor(survey_src2_df$ConHx_Dx_2019,levels=c("Yes","No"),labels=c("Diagnosed","Suspected"))
+
+green_vec<-c("#1B9E77","#2bdba6","#2cdba7","#a2efd8")
+
+manag_p1<-survey_src2_df %>%
+  ggplot(aes(x=Management,y=Perc,fill=Response)) +
+  geom_bar(stat="identity",width=0.5) +
+  scale_fill_brewer(palette="Purples") +
+  coord_flip() +
+  scale_x_discrete(limits=rev(levels(survey_src2_df$Management))) + 
+  guides(fill=guide_legend(reverse=TRUE)) +
+  theme_classic() +
+  theme(legend.position="bottom") +   
+  #geom_text(aes(label=round(Perc,digits=1))) +
+  xlab("Management Behaviours \n") + ylab("Percentage of Participants")
+manag_p1
+
+manag_p1 + facet_wrap(vars(ConHx_Dx_2019))
+
+manag_df<-data.frame(Management=c("Told coach","Did not RTP on the same day","Did not RTP with symptoms","Followed a GRTP programme","Medically supervised GRTP","Medically cleared before RTP","Followed RTS programme"),
+                    Total=c(47.5,61.7,59.1,33.9,27.8,22.6,10.4),
+                    Diagnosed=c(60.3,74.6,61.9,50.8,44.4,38.1,15.9),
+                    Suspected=c(33.3,47.1,56.9,13.7,7.8,3.9,3.9))
+
+manag_diag_p1<-manag_df %>%
+  mutate(Management=fct_relevel(Management,"Told coach","Did not RTP on the same day","Did not RTP with symptoms","Followed a GRTP programme","Medically supervised GRTP","Medically cleared before RTP","Followed RTS programme")) %>% 
+  ggplot(aes(x=Management,y=Diagnosed)) +
+  geom_bar(stat="identity",width=0.5,fill="#1B9E77") +
+  scale_x_discrete(limits=rev) +
+  scale_y_continuous(limits=c(0,85)) +
+  coord_flip() + 
+  labs(title="Diagnosed") +
+  xlab("Management Behaviour") + ylab("% of participants") +
+  geom_text(aes(label=paste(Diagnosed,"%",sep=""),hjust=-0.25)) +
+  theme_classic() +
+  theme(plot.title=element_text(hjust=0.5)) +
+  theme(plot.title=element_text(size=12))
+manag_diag_p1
+#ggsave("manag_diag.png",width=6,height=4,units="in")
+
+manag_sus_p1<-manag_df %>%
+  mutate(Management=fct_relevel(Management,"Told coach","Did not RTP on the same day","Did not RTP with symptoms","Followed a GRTP programme","Medically supervised GRTP","Medically cleared before RTP","Followed RTS programme")) %>% 
+  ggplot(aes(x=Management,y=Suspected)) +
+  geom_bar(stat="identity",width=0.5,fill="#D95F02") +
+  scale_x_discrete(limits=rev) +
+  scale_y_continuous(limits=c(0,85)) +
+  coord_flip() +
+  labs(title="Suspected") +
+  ylab("% of participants") +
+  geom_text(aes(label=paste(Suspected,"%",sep=""),hjust=-0.25)) +
+  theme_classic() +
+  theme(plot.title=element_text(hjust=0.5)) +
+  theme(plot.title=element_text(size=12)) +
+  theme(axis.text.y=element_blank()) +
+  theme(axis.ticks.y=element_blank()) +
+  theme(axis.title.y=element_blank()) 
+manag_sus_p1
+
+manag_p2<-manag_diag_p1 + manag_sus_p1
+manag_p2
+ggsave("manag.png",width=9.5,height=4,units="in")
+```
